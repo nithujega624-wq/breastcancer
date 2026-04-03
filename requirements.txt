@@ -2,7 +2,7 @@ streamlit==1.32.0
 numpy
 pandas
 opencv-python-headless
-tensorflow-cpu
+tensorflow-cpu>=2.16.1
 joblib
 scikit-learn
 scikit-survival
