@@ -7,9 +7,12 @@ import joblib
 import matplotlib.pyplot as plt
 from skimage.feature import graycomatrix, graycoprops
 from openai import OpenAI
+import os
+import zipfile
+import urllib.request
 
 # ==========================================
-# PAGE CONFIGURATION (Professional / Clean UI)
+# PAGE CONFIGURATION
 # ==========================================
 st.set_page_config(page_title="OncoVision AI | Multi-Modal Diagnostics", layout="wide", page_icon="🧬")
 
@@ -18,6 +21,36 @@ if "medical_context" not in st.session_state:
     st.session_state.medical_context = ""
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
+# ==========================================
+# AUTO-DOWNLOAD & UNZIP MODELS (GitHub Limit Bypass)
+# ==========================================
+@st.cache_resource(show_spinner=False)
+def prepare_models():
+    # Check if ALL three models exist locally
+    models_exist = (os.path.exists('mammogram_densenet.h5') and 
+                    os.path.exists('breakhis_extratrees.pkl') and 
+                    os.path.exists('metabric_rsf.pkl'))
+    
+    # If they are already unpacked, skip the download
+    if models_exist:
+        return
+    
+    # We'll save the downloaded file as 'all_models.zip' locally
+    zip_path = "all_models.zip"
+    
+    # Download the ZIP from your GitHub Release
+    if not os.path.exists(zip_path):
+        st.info("Downloading Multi-Modal AI Models from cloud storage. This takes a minute...")
+        urllib.request.urlretrieve("https://github.com/nithujega624-wq/breastcancer/releases/download/v1.1/metabric_rsf.zip", zip_path)
+    
+    # Extract the ZIP silently
+    if os.path.exists(zip_path):
+        with st.spinner("Unpacking AI Models..."):
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(".")
+
+prepare_models()
 
 # ==========================================
 # CACHED MODEL LOADING
@@ -36,7 +69,7 @@ try:
     models_loaded = True
 except Exception as e:
     models_loaded = False
-    st.error(f"Error loading models. Ensure .h5 and .pkl files are in the repository. Details: {e}")
+    st.error(f"Error loading models. Details: {e}")
 
 # ==========================================
 # SIDEBAR NAVIGATION
@@ -52,7 +85,7 @@ with st.sidebar:
                      "AI Clinical Assistant"])
     
     st.markdown("---")
-    st.caption("🔒 Research Purpose Only. Not for clinical use.")
+    st.caption("🔒 Research Purpose Only. Not for clinical use. University of Colombo School of Computing (UCSC) Final Year Project.")
 
 # ==========================================
 # MODULE 1: MAMMOGRAPHY
@@ -66,7 +99,6 @@ if page == "Mammography (DenseNet)":
     if uploaded_file is not None and models_loaded:
         col1, col2 = st.columns(2)
         
-        # 1. Read and Preprocess (Your exact pipeline)
         file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
         img_raw = cv2.imdecode(file_bytes, cv2.IMREAD_GRAYSCALE)
         
@@ -80,7 +112,6 @@ if page == "Mammography (DenseNet)":
         
         input_arr = np.expand_dims(img_resized.astype('float32') / 255.0, axis=0)
         
-        # 2. Predict
         with st.spinner("Analyzing scan..."):
             pred = mammo_model.predict(input_arr)[0][0]
             confidence = pred if pred > 0.5 else 1 - pred
@@ -97,7 +128,6 @@ if page == "Mammography (DenseNet)":
             else:
                 st.success(f"**Diagnosis:** {diagnosis} ({confidence*100:.2f}% Confidence)")
 
-        # 3. Bulletproof Grad-CAM
         with col2:
             st.subheader("AI Focus Area (Grad-CAM)")
             try:
@@ -153,17 +183,14 @@ elif page == "Histopathology (ExtraTrees)":
         with col2:
             with st.spinner("Extracting GLCM & Color features..."):
                 feats = []
-                # 1-6: RGB Stats
                 for i in range(3):
                     feats.append(np.mean(img_resized[:,:,i]))
                     feats.append(np.std(img_resized[:,:,i]))
                 
-                # 7-8: HSV (Saturation, Brightness)
                 hsv = cv2.cvtColor(img_resized, cv2.COLOR_BGR2HSV)
                 feats.append(np.mean(hsv[:,:,1])) 
                 feats.append(np.mean(hsv[:,:,2])) 
                 
-                # 9-12: GLCM Textures
                 gray = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
                 glcm = graycomatrix(gray, [1], [0, np.pi/4], 256, symmetric=True, normed=True)
                 for prop in ['contrast', 'energy', 'correlation', 'homogeneity']:
@@ -187,7 +214,7 @@ elif page == "Histopathology (ExtraTrees)":
                                  "Saturation", "Brightness", "Contrast", "Energy", "Correlation", "Homogeneity"]
                 
                 fig, ax = plt.subplots(figsize=(8, 4))
-                fig.patch.set_alpha(0.0) # Transparent background for clean UI
+                fig.patch.set_alpha(0.0)
                 ax.patch.set_alpha(0.0)
                 indices = np.argsort(importances)
                 ax.barh(range(len(indices)), importances[indices], color='#8b5cf6', align='center')
@@ -235,9 +262,6 @@ elif page == "AI Clinical Assistant":
     st.title("🤖 OncoBot Clinical Assistant")
     st.markdown("Discuss the generated diagnostic and prognostic results with the AI.")
     
-    # ---------------------------------------------------------
-    # SECURE API KEY LOADING
-    # ---------------------------------------------------------
     try:
         api_key = st.secrets["OPENAI_API_KEY"]
     except KeyError:
