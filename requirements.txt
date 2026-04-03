@@ -1,0 +1,11 @@
+streamlit==1.32.0
+numpy
+pandas
+opencv-python-headless
+tensorflow-cpu
+joblib
+scikit-learn
+scikit-survival
+scikit-image
+matplotlib
+openai
